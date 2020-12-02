@@ -1,147 +1,115 @@
 import * as d3 from "d3";
+import * as topojson from "topojson";
 import * as styles from "../styles/index.css";
 
 let app = () => {
 	const chart = d3.select("body").append("svg").attr("id", "chart");
+	const path = d3.geoPath();
 	const legendContainer = chart.append("g").attr("id", "legend");
-	const url =
-		"https://raw.githubusercontent.com/freeCodeCamp/ProjectReferenceData/master/global-temperature.json";
+	const EDUCATION_FILE =
+		"https://raw.githubusercontent.com/no-stack-dub-sack/testable-projects-fcc/master/src/data/choropleth_map/for_user_education.json";
+	const COUNTY_FILE =
+		"https://raw.githubusercontent.com/no-stack-dub-sack/testable-projects-fcc/master/src/data/choropleth_map/counties.json";
 	const getData = async () => {
-		const data = await d3.json(url);
-		renderChart(data);
+		const education = await d3.json(EDUCATION_FILE);
+		const county = await d3.json(COUNTY_FILE);
+		renderChart(education, county);
 	};
-	const renderChart = (data) => {
+	const renderChart = (education, county) => {
 		const areaWidth = window.innerWidth;
 		const areaHeight = window.innerHeight;
 		const areaPadding = areaHeight * 0.1;
-		chart.attr("width", areaWidth).attr("height", areaHeight);
-		const tempVariance = d3.extent(
-			data.monthlyVariance,
-			(d) => data.baseTemperature + d.variance
-		);
+		const bachelors = d3.extent(education, (d) => d.bachelorsOrHigher);
 		const color = d3
 			.scaleQuantize()
-			.domain(tempVariance)
-			.range([
-				"#3288bd",
-				"#99d594",
-				"#e6f598",
-				"#fee08b",
-				"#fc8d59",
-				"#d53e4f",
-			]);
-
+			.domain(bachelors)
+			.range(["#fef0d9", "#fdcc8a", "#fc8d59", "#d7301f"]);
 		const tooltip = d3
 			.select("body")
 			.append("div")
 			.attr("id", "tooltip")
 			.style("opacity", 0);
+		chart.attr("width", areaWidth).attr("height", areaHeight);
 		chart
 			.append("text")
-			.text("Monthly Global Land-Surface Temperature")
+			.text("United States Educational Attainment")
 			.attr("x", areaWidth / 2)
-			.attr("y", areaPadding - 20)
+			.attr("y", areaPadding - 40)
 			.attr("id", "title")
 			.attr("text-anchor", "middle")
 			.style("fill", "#006fbe");
 		chart
 			.append("text")
 			.attr("x", areaWidth / 2)
-			.attr("y", areaPadding - 20)
+			.attr("y", areaPadding - 40)
 			.attr("text-anchor", "middle")
 			.attr("id", "description")
 			.attr("dy", "1.5em")
-			.html(
-				data.monthlyVariance[0].year +
-					" -" +
-					data.monthlyVariance[data.monthlyVariance.length - 1].year +
-					" base temperature: " +
-					data.baseTemperature +
-					"&#8451;"
+			.text(
+				"Percentage of adults age 25 and older with a bachelor's degree or higher (2010-2014)"
 			)
 			.style("fill", "#006fbe");
-		const y = d3
-			.scaleBand()
-			.domain(d3.range(1, 13))
-			.rangeRound([areaPadding, areaHeight - areaPadding]);
-		const yAxis = d3.axisLeft(y).tickFormat((d) => {
-			const dddd = new Date();
-			dddd.setUTCMonth(d - 1);
-			return d3.timeFormat("%B")(dddd);
-		});
 		chart
 			.append("g")
-			.attr("class", "axis")
-			.attr("transform", "translate(" + areaPadding + ",0)")
-			.attr("id", "y-axis")
-			.call(yAxis);
-		const x = d3
-			.scaleBand()
-			.domain(data.monthlyVariance.map((d) => d.year))
-			.paddingOuter(0.1)
-			.range([areaPadding, areaWidth - areaPadding]);
-		const xAxis = d3
-			.axisBottom(x)
-			.tickValues(
-				d3.range(
-					data.monthlyVariance[0].year,
-					data.monthlyVariance[data.monthlyVariance.length - 1].year,
-					10
-				)
-			)
-			.tickFormat(d3.format("d"));
-		chart
-			.append("g")
-			.attr("class", "axis")
-			.attr("transform", "translate(0," + (areaHeight - areaPadding) + ")")
-			.attr("id", "x-axis")
-			.call(xAxis);
-		chart
-			.selectAll("rect")
-			.data(data.monthlyVariance)
+			.attr("class", "counties")
+			.selectAll("path")
+			.data(topojson.feature(county, county.objects.counties).features)
 			.enter()
-			.append("rect")
-			.attr("class", "cell")
-			.attr("x", (d, i) => x(d.year))
-			.attr("y", (d) => y(d.month))
-			.attr("width", x.bandwidth())
-			.attr("height", y.bandwidth())
-			.attr("fill", (d) => color(data.baseTemperature + d.variance))
-			.attr("data-month", (d) => d.month - 1)
-			.attr("data-year", (d) => d.year)
-			.attr("data-temp", (d) => data.baseTemperature + d.variance)
+			.append("path")
+			.attr("class", "county")
+			.attr("data-fips", (d) => d.id)
+			.attr("data-education", function (d) {
+				var result = education.filter(function (obj) {
+					return obj.fips === d.id;
+				});
+				if (result[0]) {
+					return result[0].bachelorsOrHigher;
+				}
+				// could not find a matching fips id in the data
+				console.log("could find data for: ", d.id);
+				return 0;
+			})
+			.attr("fill", function (d) {
+				var result = education.filter(function (obj) {
+					return obj.fips === d.id;
+				});
+				if (result[0]) {
+					return color(result[0].bachelorsOrHigher);
+				}
+				// could not find a matching fips id in the data
+				return color(0);
+			})
+			.attr("d", path)
 			.on("mouseover", (d, i) => {
-				const dm = new Date();
-				dm.setUTCMonth(i.month - 1);
+				var result = education.filter(function (obj) {
+					return obj.fips === i.id;
+				});
 				tooltip.transition().duration(200).style("opacity", 1);
 				tooltip
 					.html(
-						i.year +
+						result[0].state +
 							"<br/>" +
-							d3.timeFormat("%B")(dm) +
+							result[0].area_name +
 							"<br/>" +
-							(data.baseTemperature + i.variance).toFixed(2) +
-							" " +
-							"&#8451;"
+							result[0].bachelorsOrHigher
 					)
 					.style("left", event.pageX - 25 + "px")
 					.style("top", event.pageY - 45 + "px")
-					.attr("data-year", i.year);
+					.attr("data-education", result[0].bachelorsOrHigher);
 			})
 			.on("mouseout", function (d) {
 				tooltip.transition().duration(500).style("opacity", 0);
 			});
-		console.log(tempVariance, color.range().length);
-		console.log(d3.range(tempVariance[0], tempVariance[1], color.length));
 		const legend = legendContainer
 			.selectAll("#legend")
 			.data(color.range())
 			.enter()
 			.append("g")
 			.attr("class", "legend-label")
-			.attr("transform", function (d, i) {
-				return "translate(0," + (areaHeight - areaPadding / 1.5) + ")";
-			});
+			.attr(
+				"transform",
+				"translate(" + areaWidth / 2 + "," + areaPadding / 1.5 + ")"
+			);
 		legend
 			.append("rect")
 			.attr("x", (d, i) => areaPadding + i * 40 + 20)
@@ -152,17 +120,18 @@ let app = () => {
 			.selectAll("text")
 			.data(
 				d3.range(
-					tempVariance[0],
-					tempVariance[1],
-					(tempVariance[1] - tempVariance[0]) / color.range().length
+					bachelors[0],
+					bachelors[1],
+					(bachelors[1] - bachelors[0]) / color.range().length
 				)
 			)
 			.enter()
 			.append("text")
 			.text((d) => d.toFixed(2))
-			.attr("transform", function (d, i) {
-				return "translate(0," + (areaHeight - areaPadding / 1.5 + 30) + ")";
-			})
+			.attr(
+				"transform",
+				"translate(" + areaWidth / 2 + "," + (areaPadding / 1.5 + 30) + ")"
+			)
 			.attr("x", (d, i) => areaPadding + i * 40 + 20)
 			.style("fill", "#006fbe");
 	};
